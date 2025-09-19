@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server"
-import pool from "@/lib/db"
 import { cookies } from "next/headers"
-import type { RowDataPacket } from "mysql2"
+import { jsonServer } from "@/lib/json-server"
 
 // Interface pour représenter un utilisateur
-interface User extends RowDataPacket {
+interface User {
   id: number
   username: string
   password: string
@@ -49,14 +48,14 @@ export async function POST(request: Request) {
       })
     }
 
-    // Si ce n'est pas admin/admin123, essayer avec la base de données
+    // Si ce n'est pas admin/admin123, essayer avec JSON Server
     if (!username || !password) {
       return NextResponse.json({ error: "Nom d'utilisateur et mot de passe requis" }, { status: 400 })
     }
 
     try {
-      // Vérifier les identifiants
-      const [users] = await pool.query<User[]>("SELECT * FROM users WHERE username = ?", [username])
+      // Vérifier les identifiants avec JSON Server
+      const users = await jsonServer.get('users', { username })
 
       console.log("Résultat de la requête:", users)
 
@@ -98,10 +97,10 @@ export async function POST(request: Request) {
         token,
       })
     } catch (dbError) {
-      console.error("Erreur de base de données:", dbError)
-      // En cas d'erreur de base de données, utiliser l'authentification directe
+      console.error("Erreur de JSON Server:", dbError)
+      // En cas d'erreur de JSON Server, utiliser l'authentification directe
       if (username === "admin" && password === "admin123") {
-        console.log("Authentification directe après erreur DB")
+        console.log("Authentification directe après erreur JSON Server")
 
         // Créer un token simple
         const token = Buffer.from(`1:admin:${Date.now()}`).toString("base64")
@@ -167,12 +166,12 @@ export async function GET() {
     }
 
     try {
-      // Vérifier si l'utilisateur existe toujours
-      const [users] = await pool.query<User[]>("SELECT id, username, email, role FROM users WHERE id = ?", [userId])
+      // Vérifier si l'utilisateur existe toujours avec JSON Server
+      const user = await jsonServer.get(`users/${userId}`)
 
-      console.log("Résultat de la requête:", users)
+      console.log("Résultat de la requête:", user)
 
-      if (!Array.isArray(users) || users.length === 0) {
+      if (!user) {
         console.log("Utilisateur non trouvé")
         const cookieStore = await cookies()
         cookieStore.delete("auth_token")
@@ -180,13 +179,14 @@ export async function GET() {
       }
 
       console.log("Utilisateur authentifié")
+      const { password, ...userWithoutPassword } = user
       return NextResponse.json({
         authenticated: true,
-        user: users[0],
+        user: userWithoutPassword,
       })
     } catch (dbError) {
-      console.error("Erreur de base de données:", dbError)
-      // En cas d'erreur de base de données, utiliser l'authentification directe
+      console.error("Erreur de JSON Server:", dbError)
+      // En cas d'erreur de JSON Server, utiliser l'authentification directe
       if (username === "admin") {
         return NextResponse.json({
           authenticated: true,
@@ -213,4 +213,3 @@ export async function DELETE() {
   cookieStore.delete("auth_token")
   return NextResponse.json({ message: "Déconnecté avec succès" })
 }
-

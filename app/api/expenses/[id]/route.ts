@@ -1,27 +1,27 @@
 import { NextResponse } from "next/server"
-import pool from "@/lib/db"
-import type { RowDataPacket } from "mysql2"
+import { jsonServer } from "@/lib/json-server"
 
 // Récupérer une dépense spécifique
 export async function GET(request: Request, { params }: { params: { id: string } }) {
   try {
     const id = params.id
 
-    const [expenses] = await pool.query<RowDataPacket[]>(
-      `
-      SELECT e.*, p.name as property_name
-      FROM expenses e
-      LEFT JOIN properties p ON e.property_id = p.id
-      WHERE e.id = ?
-    `,
-      [id],
-    )
+    // Récupérer la dépense
+    const expense = await jsonServer.get(`expenses/${id}`)
 
-    if (!Array.isArray(expenses) || expenses.length === 0) {
+    if (!expense) {
       return NextResponse.json({ error: "Dépense non trouvée" }, { status: 404 })
     }
 
-    return NextResponse.json(expenses[0])
+    // Récupérer le nom de la propriété
+    try {
+      const property = await jsonServer.get(`properties/${expense.property_id}`)
+      expense.property_name = property?.name || 'Propriété inconnue'
+    } catch (error) {
+      expense.property_name = 'Propriété inconnue'
+    }
+
+    return NextResponse.json(expense)
   } catch (error: any) {
     console.error("Erreur lors de la récupération de la dépense:", error)
     return NextResponse.json({ error: "Erreur serveur" }, { status: 500 })
@@ -39,37 +39,38 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     }
 
     // Vérifier si la dépense existe
-    const [expenses] = await pool.query<RowDataPacket[]>("SELECT * FROM expenses WHERE id = ?", [id])
-
-    if (!Array.isArray(expenses) || expenses.length === 0) {
+    try {
+      await jsonServer.get(`expenses/${id}`)
+    } catch (error) {
       return NextResponse.json({ error: "Dépense non trouvée" }, { status: 404 })
     }
 
     // Vérifier si la propriété existe
-    const [properties] = await pool.query<RowDataPacket[]>("SELECT * FROM properties WHERE id = ?", [property_id])
-
-    if (!Array.isArray(properties) || properties.length === 0) {
+    try {
+      await jsonServer.get(`properties/${property_id}`)
+    } catch (error) {
       return NextResponse.json({ error: "Propriété non trouvée" }, { status: 404 })
     }
 
     // Mettre à jour la dépense
-    await pool.query(
-      "UPDATE expenses SET property_id = ?, amount = ?, date = ?, description = ?, category = ?, updated_at = NOW() WHERE id = ?",
-      [property_id, amount, date, description, category, id],
-    )
+    const updatedExpense = await jsonServer.put(`expenses/${id}`, {
+      property_id: Number(property_id),
+      amount: Number(amount),
+      date,
+      description,
+      category,
+      updated_at: new Date().toISOString(),
+    })
 
-    // Récupérer la dépense mise à jour
-    const [updatedExpenses] = await pool.query<RowDataPacket[]>(
-      `
-      SELECT e.*, p.name as property_name
-      FROM expenses e
-      LEFT JOIN properties p ON e.property_id = p.id
-      WHERE e.id = ?
-    `,
-      [id],
-    )
+    // Récupérer le nom de la propriété
+    try {
+      const property = await jsonServer.get(`properties/${property_id}`)
+      updatedExpense.property_name = property.name
+    } catch (error) {
+      updatedExpense.property_name = 'Propriété inconnue'
+    }
 
-    return NextResponse.json(updatedExpenses[0])
+    return NextResponse.json(updatedExpense)
   } catch (error: any) {
     console.error("Erreur lors de la mise à jour de la dépense:", error)
     return NextResponse.json({ error: "Erreur serveur" }, { status: 500 })
@@ -82,14 +83,14 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
     const id = params.id
 
     // Vérifier si la dépense existe
-    const [expenses] = await pool.query<RowDataPacket[]>("SELECT * FROM expenses WHERE id = ?", [id])
-
-    if (!Array.isArray(expenses) || expenses.length === 0) {
+    try {
+      await jsonServer.get(`expenses/${id}`)
+    } catch (error) {
       return NextResponse.json({ error: "Dépense non trouvée" }, { status: 404 })
     }
 
     // Supprimer la dépense
-    await pool.query("DELETE FROM expenses WHERE id = ?", [id])
+    await jsonServer.delete(`expenses/${id}`)
 
     return NextResponse.json({ success: true })
   } catch (error: any) {
@@ -97,4 +98,3 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
     return NextResponse.json({ error: "Erreur serveur" }, { status: 500 })
   }
 }
-

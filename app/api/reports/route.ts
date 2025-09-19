@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server"
-import pool from "@/lib/db"
-import type { RowDataPacket } from "mysql2"
+import { jsonServer } from "@/lib/json-server"
 
 // Récupérer les données pour les rapports
 export async function GET(request: Request) {
@@ -38,61 +37,52 @@ export async function GET(request: Request) {
 
 // Rapport de revenus
 async function getIncomeReport(period: string, year: string, month: string) {
-  let query = ""
-  let params: any[] = []
-
+  const payments = await jsonServer.get('payments', { status: 'paid' })
+  
+  let filteredPayments = payments
+  
   if (period === "year") {
-    query = `
-      SELECT 
-        MONTH(p.date) as month,
-        SUM(p.amount) as revenue
-      FROM payments p
-      WHERE p.status = 'paid'
-        AND YEAR(p.date) = ?
-      GROUP BY MONTH(p.date)
-      ORDER BY MONTH(p.date)
-    `
-    params = [year]
+    filteredPayments = payments.filter((payment: any) => {
+      const paymentDate = new Date(payment.date)
+      return paymentDate.getFullYear() === Number(year)
+    })
   } else if (period === "month") {
-    query = `
-      SELECT 
-        DAY(p.date) as day,
-        SUM(p.amount) as revenue
-      FROM payments p
-      WHERE p.status = 'paid'
-        AND YEAR(p.date) = ?
-        AND MONTH(p.date) = ?
-      GROUP BY DAY(p.date)
-      ORDER BY DAY(p.date)
-    `
-    params = [year, month]
-  } else {
-    // quarter
-    query = `
-      SELECT 
-        MONTH(p.date) as month,
-        SUM(p.amount) as revenue
-      FROM payments p
-      WHERE p.status = 'paid'
-        AND YEAR(p.date) = ?
-        AND QUARTER(p.date) = ?
-      GROUP BY MONTH(p.date)
-      ORDER BY MONTH(p.date)
-    `
-    const quarter = Math.ceil(Number.parseInt(month) / 3)
-    params = [year, quarter.toString()] as string[]
+    filteredPayments = payments.filter((payment: any) => {
+      const paymentDate = new Date(payment.date)
+      return paymentDate.getFullYear() === Number(year) && paymentDate.getMonth() + 1 === Number(month)
+    })
   }
 
-  const [results] = await pool.query<RowDataPacket[]>(query, params)
+  // Grouper par période
+  const groupedData: any = {}
+  
+  filteredPayments.forEach((payment: any) => {
+    const paymentDate = new Date(payment.date)
+    let key: string
+    
+    if (period === "year") {
+      key = paymentDate.getMonth().toString()
+    } else if (period === "month") {
+      key = paymentDate.getDate().toString()
+    } else {
+      key = paymentDate.getMonth().toString()
+    }
+    
+    if (!groupedData[key]) {
+      groupedData[key] = 0
+    }
+    groupedData[key] += payment.amount
+  })
 
-  // Calculer le total
-  let total = 0
-  for (const row of results) {
-    total += row.revenue
-  }
+  const data = Object.entries(groupedData).map(([key, revenue]) => ({
+    [period === "month" ? "day" : "month"]: Number(key),
+    revenue,
+  }))
+
+  const total = filteredPayments.reduce((sum: number, payment: any) => sum + payment.amount, 0)
 
   return {
-    data: results,
+    data,
     total,
     period,
     year,
@@ -102,69 +92,68 @@ async function getIncomeReport(period: string, year: string, month: string) {
 
 // Rapport de dépenses
 async function getExpensesReport(period: string, year: string, month: string) {
-  let query = ""
-  let params: any[] = []
-
+  const expenses = await jsonServer.get('expenses')
+  
+  let filteredExpenses = expenses
+  
   if (period === "year") {
-    query = `
-      SELECT 
-        MONTH(e.date) as month,
-        SUM(e.amount) as expenses,
-        e.category
-      FROM expenses e
-      WHERE YEAR(e.date) = ?
-      GROUP BY MONTH(e.date), e.category
-      ORDER BY MONTH(e.date), e.category
-    `
-    params = [year]
+    filteredExpenses = expenses.filter((expense: any) => {
+      const expenseDate = new Date(expense.date)
+      return expenseDate.getFullYear() === Number(year)
+    })
   } else if (period === "month") {
-    query = `
-      SELECT 
-        DAY(e.date) as day,
-        SUM(e.amount) as expenses,
-        e.category
-      FROM expenses e
-      WHERE YEAR(e.date) = ?
-        AND MONTH(e.date) = ?
-      GROUP BY DAY(e.date), e.category
-      ORDER BY DAY(e.date), e.category
-    `
-    params = [year, month]
-  } else {
-    // quarter
-    query = `
-      SELECT 
-        MONTH(e.date) as month,
-        SUM(e.amount) as expenses,
-        e.category
-      FROM expenses e
-      WHERE YEAR(e.date) = ?
-        AND QUARTER(e.date) = ?
-      GROUP BY MONTH(e.date), e.category
-      ORDER BY MONTH(e.date), e.category
-    `
-    const quarter = Math.ceil(Number.parseInt(month) / 3)
-    params = [year, quarter]
+    filteredExpenses = expenses.filter((expense: any) => {
+      const expenseDate = new Date(expense.date)
+      return expenseDate.getFullYear() === Number(year) && expenseDate.getMonth() + 1 === Number(month)
+    })
   }
 
-  const [results] = await pool.query<RowDataPacket[]>(query, params)
-
-  // Calculer le total par catégorie
-  const categories: Record<string, number> = {}
-  let total = 0
-
-  for (const row of results) {
-    if (!categories[row.category]) {
-      categories[row.category] = 0
+  // Grouper par période et catégorie
+  const groupedData: any = {}
+  const categories: any = {}
+  
+  filteredExpenses.forEach((expense: any) => {
+    const expenseDate = new Date(expense.date)
+    let key: string
+    
+    if (period === "year") {
+      key = expenseDate.getMonth().toString()
+    } else if (period === "month") {
+      key = expenseDate.getDate().toString()
+    } else {
+      key = expenseDate.getMonth().toString()
     }
-    categories[row.category] += row.expenses
-    total += row.expenses
-  }
+    
+    if (!groupedData[key]) {
+      groupedData[key] = {}
+    }
+    if (!groupedData[key][expense.category]) {
+      groupedData[key][expense.category] = 0
+    }
+    groupedData[key][expense.category] += expense.amount
 
-  const categoryData = Object.entries(categories).map(([name, value]) => ({ name, value }))
+    // Calculer le total par catégorie
+    if (!categories[expense.category]) {
+      categories[expense.category] = 0
+    }
+    categories[expense.category] += expense.amount
+  })
+
+  const data = Object.entries(groupedData).map(([key, categoryData]) => ({
+    [period === "month" ? "day" : "month"]: Number(key),
+    expenses: Object.values(categoryData as any).reduce((sum: number, val: number) => sum + val, 0),
+    category: Object.keys(categoryData as any)[0], // Première catégorie pour simplifier
+  }))
+
+  const categoryData = Object.entries(categories).map(([name, value]) => ({ 
+    name: getCategoryLabel(name), 
+    value 
+  }))
+
+  const total = filteredExpenses.reduce((sum: number, expense: any) => sum + expense.amount, 0)
 
   return {
-    data: results,
+    data,
     categories: categoryData,
     total,
     period,
@@ -175,63 +164,24 @@ async function getExpensesReport(period: string, year: string, month: string) {
 
 // Rapport d'occupation
 async function getOccupancyReport(period: string, year: string, month: string) {
-  let query = ""
-  let params = []
+  const units = await jsonServer.get('units')
+  
+  const totalUnits = units.length
+  const occupiedUnits = units.filter((unit: any) => unit.status === 'occupied').length
+  const occupancyRate = totalUnits > 0 ? Math.round((occupiedUnits / totalUnits) * 100) : 0
 
-  if (period === "year") {
-    query = `
-      SELECT 
-        MONTH(CURDATE()) as month,
-        COUNT(u.id) as total_units,
-        SUM(CASE WHEN u.status = 'occupied' THEN 1 ELSE 0 END) as occupied_units
-      FROM units u
-      WHERE 1=1
-    `
-    params = []
-  } else if (period === "month") {
-    query = `
-      SELECT 
-        DAY(CURDATE()) as day,
-        COUNT(u.id) as total_units,
-        SUM(CASE WHEN u.status = 'occupied' THEN 1 ELSE 0 END) as occupied_units
-      FROM units u
-      WHERE 1=1
-    `
-    params = []
-  } else {
-    // quarter
-    query = `
-      SELECT 
-        MONTH(CURDATE()) as month,
-        COUNT(u.id) as total_units,
-        SUM(CASE WHEN u.status = 'occupied' THEN 1 ELSE 0 END) as occupied_units
-      FROM units u
-      WHERE 1=1
-    `
-    params = []
-  }
-
-  const [results] = await pool.query<RowDataPacket[]>(query, params)
-
-  // Calculer le taux d'occupation
-  const data = results.map((row) => {
-    const occupancyRate = row.total_units > 0 ? Math.round((row.occupied_units / row.total_units) * 100) : 0
-    return {
-      ...row,
-      occupancy_rate: occupancyRate,
-    }
-  })
-
-  // Calculer le taux d'occupation moyen
-  let totalRate = 0
-  for (const row of data) {
-    totalRate += row.occupancy_rate
-  }
-  const averageRate = data.length > 0 ? Math.round(totalRate / data.length) : 0
+  // Simuler des données mensuelles (dans une vraie application, vous auriez un historique)
+  const months = ["Jan", "Fév", "Mar", "Avr", "Mai", "Juin", "Juil", "Août", "Sep", "Oct", "Nov", "Déc"]
+  const data = months.map((month, index) => ({
+    month,
+    total_units: totalUnits,
+    occupied_units: occupiedUnits,
+    occupancy_rate: occupancyRate,
+  }))
 
   return {
     data,
-    average_rate: averageRate,
+    average_rate: occupancyRate,
     period,
     year,
     month,
@@ -263,3 +213,26 @@ async function getOverviewReport(period: string, year: string, month: string) {
   }
 }
 
+// Fonction utilitaire pour obtenir le libellé de la catégorie
+function getCategoryLabel(category: string) {
+  switch (category) {
+    case "utilities":
+      return "Charges"
+    case "maintenance":
+      return "Entretien"
+    case "repairs":
+      return "Réparations"
+    case "taxes":
+      return "Taxes"
+    case "insurance":
+      return "Assurance"
+    case "water":
+      return "Eau"
+    case "electricity":
+      return "Électricité"
+    case "other":
+      return "Autre"
+    default:
+      return category
+  }
+}

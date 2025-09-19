@@ -1,30 +1,33 @@
 import { NextResponse } from "next/server"
-import pool from "@/lib/db"
-import type { RowDataPacket, OkPacket } from "mysql2"
-
-// Interface pour représenter un locataire
-interface Tenant extends RowDataPacket {
-  id: number
-  name: string
-  phone: string
-  email: string
-  unit_id: number
-  deposit_amount: number
-  lease_start: string
-  lease_end: string
-  payment_status: string
-}
+import { jsonServer } from "@/lib/json-server"
 
 // Récupérer tous les locataires
 export async function GET() {
   try {
-    const [tenants] = await pool.query<Tenant[]>(`
-      SELECT t.*, u.name as unit_name, u.rent as rent_amount, p.name as property_name
-      FROM tenants t
-      LEFT JOIN units u ON t.unit_id = u.id
-      LEFT JOIN properties p ON u.property_id = p.id
-      ORDER BY t.name
-    `)
+    const tenants = await jsonServer.get('tenants')
+
+    // Pour chaque locataire, récupérer les informations de l'unité et de la propriété
+    for (const tenant of tenants) {
+      try {
+        // Récupérer l'unité
+        const unit = await jsonServer.get(`units/${tenant.unit_id}`)
+        if (unit) {
+          tenant.unit_name = unit.name
+          tenant.rent_amount = unit.rent
+
+          // Récupérer la propriété
+          const property = await jsonServer.get(`properties/${unit.property_id}`)
+          if (property) {
+            tenant.property_name = property.name
+          }
+        }
+      } catch (error) {
+        console.error(`Erreur lors de la récupération des relations pour le locataire ${tenant.id}:`, error)
+        tenant.unit_name = 'Unité inconnue'
+        tenant.property_name = 'Propriété inconnue'
+        tenant.rent_amount = 0
+      }
+    }
 
     return NextResponse.json(tenants)
   } catch (error: any) {
@@ -43,41 +46,47 @@ export async function POST(request: Request) {
     }
 
     // Vérifier si l'unité existe et est disponible
-    const [units] = await pool.query<RowDataPacket[]>('SELECT * FROM units WHERE id = ? AND status = "vacant"', [
-      unit_id,
-    ])
-
-    if (!Array.isArray(units) || units.length === 0) {
+    try {
+      const unit = await jsonServer.get(`units/${unit_id}`)
+      if (!unit || unit.status !== 'vacant') {
+        return NextResponse.json({ error: "Logement non disponible ou inexistant" }, { status: 400 })
+      }
+    } catch (error) {
       return NextResponse.json({ error: "Logement non disponible ou inexistant" }, { status: 400 })
     }
 
-    // Insérer le locataire
-    const [result] = await pool.query<OkPacket>(
-      "INSERT INTO tenants (name, phone, email, unit_id, deposit_amount, lease_start, lease_end, payment_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-      [name, phone, email || null, unit_id, deposit_amount, lease_start, lease_end || null, "up-to-date"],
-    )
+    // Créer le locataire
+    const newTenant = {
+      name,
+      phone,
+      email: email || null,
+      unit_id: Number(unit_id),
+      deposit_amount: Number(deposit_amount),
+      lease_start,
+      lease_end: lease_end || null,
+      payment_status: "up-to-date",
+      created_at: new Date().toISOString(),
+    }
+
+    const result = await jsonServer.post('tenants', newTenant)
 
     // Mettre à jour le statut de l'unité
-    await pool.query('UPDATE units SET status = "occupied" WHERE id = ?', [unit_id])
+    await jsonServer.patch(`units/${unit_id}`, { status: "occupied" })
 
-    const insertId = result.insertId
+    // Récupérer les informations complètes du locataire
+    const unit = await jsonServer.get(`units/${unit_id}`)
+    const property = await jsonServer.get(`properties/${unit.property_id}`)
 
-    // Récupérer le locataire avec les informations complètes
-    const [newTenants] = await pool.query<Tenant[]>(
-      `
-      SELECT t.*, u.name as unit_name, u.rent as rent_amount, p.name as property_name
-      FROM tenants t
-      LEFT JOIN units u ON t.unit_id = u.id
-      LEFT JOIN properties p ON u.property_id = p.id
-      WHERE t.id = ?
-    `,
-      [insertId],
-    )
+    const tenantWithDetails = {
+      ...result,
+      unit_name: unit.name,
+      rent_amount: unit.rent,
+      property_name: property.name,
+    }
 
-    return NextResponse.json(newTenants[0], { status: 201 })
+    return NextResponse.json(tenantWithDetails, { status: 201 })
   } catch (error: any) {
     console.error("Erreur lors de la création du locataire:", error)
     return NextResponse.json({ error: "Erreur serveur" }, { status: 500 })
   }
 }
-

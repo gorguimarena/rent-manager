@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "json-server": "json-server --watch db.json --port 3001",
+    "dev:full": "concurrently \"npm run json-server\" \"npm run dev\"",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
@@ -19,6 +21,7 @@
     "@radix-ui/react-tabs": "^1.0.4",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.0.0",
+    "concurrently": "^8.2.2",
     "date-fns": "^2.30.0",
     "jspdf": "^2.5.1",
     "lucide-react": "^0.294.0",

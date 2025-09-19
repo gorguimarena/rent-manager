@@ -1,31 +1,36 @@
 import { NextResponse } from "next/server"
-import pool from "@/lib/db"
+import { jsonServer } from "@/lib/json-server"
 
 // Récupérer toutes les propriétés
 export async function GET() {
   try {
-    const [properties] = await pool.query(`
-      SELECT p.*, 
-        COUNT(u.id) as unit_count,
-        SUM(CASE WHEN u.status = 'occupied' THEN 1 ELSE 0 END) as occupied_count
-      FROM properties p
-      LEFT JOIN units u ON p.id = u.property_id
-      GROUP BY p.id
-    `)
+    // Récupérer les propriétés avec leurs unités
+    const properties = await jsonServer.getWithEmbeds('properties', ['units'])
 
-    // Pour chaque propriété, récupérer ses unités
-    for (const property of properties as any[]) {
-      const [units] = await pool.query(
-        `
-        SELECT u.*, t.name as tenant_name
-        FROM units u
-        LEFT JOIN tenants t ON u.id = t.unit_id
-        WHERE u.property_id = ?
-      `,
-        [property.id],
-      )
+    // Pour chaque propriété, calculer les statistiques et récupérer les locataires
+    for (const property of properties) {
+      if (property.units) {
+        property.unit_count = property.units.length
+        property.occupied_count = property.units.filter((unit: any) => unit.status === 'occupied').length
 
-      property.units = units
+        // Pour chaque unité, récupérer le locataire s'il y en a un
+        for (const unit of property.units) {
+          if (unit.status === 'occupied') {
+            try {
+              const tenants = await jsonServer.get('tenants', { unit_id: unit.id })
+              if (tenants.length > 0) {
+                unit.tenant_name = tenants[0].name
+              }
+            } catch (error) {
+              console.error(`Erreur lors de la récupération du locataire pour l'unité ${unit.id}:`, error)
+            }
+          }
+        }
+      } else {
+        property.units = []
+        property.unit_count = 0
+        property.occupied_count = 0
+      }
     }
 
     return NextResponse.json(properties)
@@ -44,16 +49,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Nom et adresse requis" }, { status: 400 })
     }
 
-    const [result] = await pool.query("INSERT INTO properties (name, address) VALUES (?, ?)", [name, address])
+    const newProperty = {
+      name,
+      address,
+      created_at: new Date().toISOString(),
+    }
 
-    const insertId = (result as any).insertId
+    const result = await jsonServer.post('properties', newProperty)
 
     return NextResponse.json(
       {
-        id: insertId,
-        name,
-        address,
+        ...result,
         units: [],
+        unit_count: 0,
+        occupied_count: 0,
       },
       { status: 201 },
     )
@@ -62,4 +71,3 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Erreur serveur" }, { status: 500 })
   }
 }
-

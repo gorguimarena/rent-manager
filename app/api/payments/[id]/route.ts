@@ -1,40 +1,39 @@
 import { NextResponse } from "next/server"
-import pool from "@/lib/db"
-import type { RowDataPacket, OkPacket } from "mysql2"
-
-// Interface pour représenter un paiement
-interface Payment extends RowDataPacket {
-  id: number
-  tenant_id: number
-  amount: number
-  date: string
-  type: string
-  status: string
-  period: string
-}
+import { jsonServer } from "@/lib/json-server"
 
 // Récupérer un paiement spécifique
 export async function GET(request: Request, { params }: { params: { id: string } }) {
   try {
     const id = params.id
 
-    const [payments] = await pool.query<Payment[]>(
-      `
-      SELECT p.*, t.name as tenant_name, u.name as unit_name, pr.name as property_name
-      FROM payments p
-      LEFT JOIN tenants t ON p.tenant_id = t.id
-      LEFT JOIN units u ON t.unit_id = u.id
-      LEFT JOIN properties pr ON u.property_id = pr.id
-      WHERE p.id = ?
-    `,
-      [id],
-    )
+    // Récupérer le paiement
+    const payment = await jsonServer.get(`payments/${id}`)
 
-    if (!Array.isArray(payments) || payments.length === 0) {
+    if (!payment) {
       return NextResponse.json({ error: "Paiement non trouvé" }, { status: 404 })
     }
 
-    return NextResponse.json(payments[0])
+    // Récupérer les informations du locataire, de l'unité et de la propriété
+    try {
+      const tenant = await jsonServer.get(`tenants/${payment.tenant_id}`)
+      if (tenant) {
+        payment.tenant_name = tenant.name
+
+        const unit = await jsonServer.get(`units/${tenant.unit_id}`)
+        if (unit) {
+          payment.unit_name = unit.name
+
+          const property = await jsonServer.get(`properties/${unit.property_id}`)
+          if (property) {
+            payment.property_name = property.name
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Erreur lors de la récupération des relations:', error)
+    }
+
+    return NextResponse.json(payment)
   } catch (error: any) {
     console.error("Erreur lors de la récupération du paiement:", error)
     return NextResponse.json({ error: "Erreur serveur" }, { status: 500 })
@@ -52,45 +51,44 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     }
 
     // Récupérer le paiement actuel
-    const [payments] = await pool.query<Payment[]>("SELECT * FROM payments WHERE id = ?", [id])
-
-    if (!Array.isArray(payments) || payments.length === 0) {
+    const currentPayment = await jsonServer.get(`payments/${id}`)
+    if (!currentPayment) {
       return NextResponse.json({ error: "Paiement non trouvé" }, { status: 404 })
     }
 
-    const tenant_id = payments[0].tenant_id
+    const tenant_id = currentPayment.tenant_id
 
     // Mettre à jour le paiement
-    const [result] = await pool.query<OkPacket>(
-      "UPDATE payments SET amount = ?, date = ?, type = ?, status = ?, period = ? WHERE id = ?",
-      [amount, date || null, type, status, period, id],
-    )
-
-    if (result.affectedRows === 0) {
-      return NextResponse.json({ error: "Paiement non trouvé" }, { status: 404 })
-    }
+    const updatedPayment = await jsonServer.put(`payments/${id}`, {
+      amount: Number(amount),
+      date: date || null,
+      type,
+      status,
+      period,
+      updated_at: new Date().toISOString(),
+    })
 
     // Mettre à jour le statut du locataire si nécessaire
     if (status === "paid") {
-      await pool.query('UPDATE tenants SET payment_status = "up-to-date" WHERE id = ?', [tenant_id])
+      await jsonServer.patch(`tenants/${tenant_id}`, { payment_status: "up-to-date" })
     } else if (status === "unpaid") {
-      await pool.query('UPDATE tenants SET payment_status = "late" WHERE id = ?', [tenant_id])
+      await jsonServer.patch(`tenants/${tenant_id}`, { payment_status: "late" })
     }
 
-    // Récupérer le paiement mis à jour
-    const [updatedPayments] = await pool.query<Payment[]>(
-      `
-      SELECT p.*, t.name as tenant_name, u.name as unit_name, pr.name as property_name
-      FROM payments p
-      LEFT JOIN tenants t ON p.tenant_id = t.id
-      LEFT JOIN units u ON t.unit_id = u.id
-      LEFT JOIN properties pr ON u.property_id = pr.id
-      WHERE p.id = ?
-    `,
-      [id],
-    )
+    // Récupérer les informations complètes
+    try {
+      const tenant = await jsonServer.get(`tenants/${tenant_id}`)
+      const unit = await jsonServer.get(`units/${tenant.unit_id}`)
+      const property = await jsonServer.get(`properties/${unit.property_id}`)
+      
+      updatedPayment.tenant_name = tenant.name
+      updatedPayment.unit_name = unit.name
+      updatedPayment.property_name = property.name
+    } catch (error) {
+      console.error('Erreur lors de la récupération des relations:', error)
+    }
 
-    return NextResponse.json(updatedPayments[0])
+    return NextResponse.json(updatedPayment)
   } catch (error: any) {
     console.error("Erreur lors de la mise à jour du paiement:", error)
     return NextResponse.json({ error: "Erreur serveur" }, { status: 500 })
@@ -102,15 +100,15 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
   try {
     const id = params.id
 
-    // Récupérer le paiement
-    const [payments] = await pool.query<Payment[]>("SELECT * FROM payments WHERE id = ?", [id])
-
-    if (!Array.isArray(payments) || payments.length === 0) {
+    // Vérifier que le paiement existe
+    try {
+      await jsonServer.get(`payments/${id}`)
+    } catch (error) {
       return NextResponse.json({ error: "Paiement non trouvé" }, { status: 404 })
     }
 
     // Supprimer le paiement
-    await pool.query("DELETE FROM payments WHERE id = ?", [id])
+    await jsonServer.delete(`payments/${id}`)
 
     return NextResponse.json({ message: "Paiement supprimé avec succès" })
   } catch (error: any) {
@@ -118,4 +116,3 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
     return NextResponse.json({ error: "Erreur serveur" }, { status: 500 })
   }
 }
-

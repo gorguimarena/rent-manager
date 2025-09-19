@@ -1,22 +1,18 @@
 import { NextResponse } from "next/server"
-import pool from "@/lib/db"
-import type { RowDataPacket, OkPacket } from "mysql2"
-
-// Interface pour représenter un utilisateur
-interface User extends RowDataPacket {
-  id: number
-  username: string
-  email: string
-  role: string
-}
+import { jsonServer } from "@/lib/json-server"
 
 // Endpoint de débogage pour vérifier les utilisateurs
 export async function GET() {
   try {
     // Récupérer tous les utilisateurs (sans les mots de passe)
-    const [users] = await pool.query<User[]>("SELECT id, username, email, role FROM users")
+    const users = await jsonServer.get('users')
+    
+    const usersWithoutPasswords = users.map((user: any) => {
+      const { password, ...userWithoutPassword } = user
+      return userWithoutPassword
+    })
 
-    return NextResponse.json({ users })
+    return NextResponse.json({ users: usersWithoutPasswords })
   } catch (error: any) {
     console.error("Erreur lors de la récupération des utilisateurs:", error)
     return NextResponse.json({ error: error.message || "Erreur serveur" }, { status: 500 })
@@ -27,9 +23,9 @@ export async function GET() {
 export async function POST() {
   try {
     // Vérifier si l'utilisateur admin existe déjà
-    const [existingUsers] = await pool.query<User[]>("SELECT * FROM users WHERE username = ?", ["admin"])
+    const existingUsers = await jsonServer.get('users', { username: 'admin' })
 
-    if (Array.isArray(existingUsers) && existingUsers.length > 0) {
+    if (existingUsers.length > 0) {
       return NextResponse.json({
         message: "L'utilisateur admin existe déjà",
         user: {
@@ -40,17 +36,20 @@ export async function POST() {
     }
 
     // Créer l'utilisateur admin
-    const [result] = await pool.query<OkPacket>(
-      "INSERT INTO users (username, password, email, role) VALUES (?, ?, ?, ?)",
-      ["admin", "admin123", "admin@example.com", "admin"],
-    )
+    const newUser = {
+      username: "admin",
+      password: "admin123",
+      email: "admin@example.com",
+      role: "admin",
+      created_at: new Date().toISOString(),
+    }
 
-    const insertId = result.insertId
+    const result = await jsonServer.post('users', newUser)
 
     return NextResponse.json(
       {
         message: "Utilisateur admin créé avec succès",
-        user: { id: insertId, username: "admin" },
+        user: { id: result.id, username: "admin" },
       },
       { status: 201 },
     )
@@ -59,4 +58,3 @@ export async function POST() {
     return NextResponse.json({ error: error.message || "Erreur serveur" }, { status: 500 })
   }
 }
-

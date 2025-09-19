@@ -1,19 +1,5 @@
 import { NextResponse } from "next/server"
-import pool from "@/lib/db"
-import type { RowDataPacket, OkPacket } from "mysql2"
-
-// Interface pour représenter une dépense
-interface Expense extends RowDataPacket {
-  id: number
-  property_id: number
-  amount: number
-  date: string
-  description: string
-  category: string
-  receipt_url?: string
-  created_at: string
-  updated_at: string
-}
+import { jsonServer } from "@/lib/json-server"
 
 // Récupérer toutes les dépenses
 export async function GET(request: Request) {
@@ -24,40 +10,44 @@ export async function GET(request: Request) {
     const startDate = searchParams.get("start_date")
     const endDate = searchParams.get("end_date")
 
-    let query = `
-      SELECT e.*, p.name as property_name
-      FROM expenses e
-      LEFT JOIN properties p ON e.property_id = p.id
-      WHERE 1=1
-    `
-
-    const params: any[] = []
+    let params: any = {}
 
     if (property_id) {
-      query += " AND e.property_id = ?"
-      params.push(property_id)
+      params.property_id = property_id
     }
 
     if (category) {
-      query += " AND e.category = ?"
-      params.push(category)
+      params.category = category
     }
 
-    if (startDate) {
-      query += " AND e.date >= ?"
-      params.push(startDate)
+    const expenses = await jsonServer.get('expenses', params)
+
+    // Filtrer par dates si nécessaire
+    let filteredExpenses = expenses
+    if (startDate || endDate) {
+      filteredExpenses = expenses.filter((expense: any) => {
+        const expenseDate = new Date(expense.date)
+        if (startDate && expenseDate < new Date(startDate)) return false
+        if (endDate && expenseDate > new Date(endDate)) return false
+        return true
+      })
     }
 
-    if (endDate) {
-      query += " AND e.date <= ?"
-      params.push(endDate)
+    // Pour chaque dépense, récupérer le nom de la propriété
+    for (const expense of filteredExpenses) {
+      try {
+        const property = await jsonServer.get(`properties/${expense.property_id}`)
+        expense.property_name = property?.name || 'Propriété inconnue'
+      } catch (error) {
+        console.error(`Erreur lors de la récupération de la propriété pour la dépense ${expense.id}:`, error)
+        expense.property_name = 'Propriété inconnue'
+      }
     }
 
-    query += " ORDER BY e.date DESC, e.id DESC"
+    // Trier par date décroissante
+    filteredExpenses.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())
 
-    const [expenses] = await pool.query<Expense[]>(query, params)
-
-    return NextResponse.json(expenses)
+    return NextResponse.json(filteredExpenses)
   } catch (error: any) {
     console.error("Erreur lors de la récupération des dépenses:", error)
     return NextResponse.json({ error: "Erreur serveur" }, { status: 500 })
@@ -67,8 +57,6 @@ export async function GET(request: Request) {
 // Créer une nouvelle dépense
 export async function POST(request: Request) {
   try {
-    // Pour une application réelle, vous devriez utiliser formidable ou multer pour gérer les fichiers
-    // Ici, nous simulons simplement l'ajout d'une dépense sans gestion de fichier
     const { property_id, amount, date, description, category } = await request.json()
 
     if (!property_id || !amount || !date || !description || !category) {
@@ -76,35 +64,35 @@ export async function POST(request: Request) {
     }
 
     // Vérifier si la propriété existe
-    const [properties] = await pool.query<RowDataPacket[]>("SELECT * FROM properties WHERE id = ?", [property_id])
-
-    if (!Array.isArray(properties) || properties.length === 0) {
+    try {
+      await jsonServer.get(`properties/${property_id}`)
+    } catch (error) {
       return NextResponse.json({ error: "Propriété non trouvée" }, { status: 404 })
     }
 
-    // Insérer la dépense
-    const [result] = await pool.query<OkPacket>(
-      "INSERT INTO expenses (property_id, amount, date, description, category) VALUES (?, ?, ?, ?, ?)",
-      [property_id, amount, date, description, category],
-    )
+    // Créer la dépense
+    const newExpense = {
+      property_id: Number(property_id),
+      amount: Number(amount),
+      date,
+      description,
+      category,
+      created_at: new Date().toISOString(),
+    }
 
-    const insertId = result.insertId
+    const result = await jsonServer.post('expenses', newExpense)
 
-    // Récupérer la dépense avec les informations complètes
-    const [newExpenses] = await pool.query<Expense[]>(
-      `
-      SELECT e.*, p.name as property_name
-      FROM expenses e
-      LEFT JOIN properties p ON e.property_id = p.id
-      WHERE e.id = ?
-    `,
-      [insertId],
-    )
+    // Récupérer le nom de la propriété
+    try {
+      const property = await jsonServer.get(`properties/${property_id}`)
+      result.property_name = property.name
+    } catch (error) {
+      result.property_name = 'Propriété inconnue'
+    }
 
-    return NextResponse.json(newExpenses[0], { status: 201 })
+    return NextResponse.json(result, { status: 201 })
   } catch (error: any) {
     console.error("Erreur lors de la création de la dépense:", error)
     return NextResponse.json({ error: "Erreur serveur" }, { status: 500 })
   }
 }
-

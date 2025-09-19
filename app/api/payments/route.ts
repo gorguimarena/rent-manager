@@ -1,17 +1,5 @@
 import { NextResponse } from "next/server"
-import pool from "@/lib/db"
-import type { RowDataPacket, OkPacket } from "mysql2"
-
-// Interface pour représenter un paiement
-interface Payment extends RowDataPacket {
-  id: number
-  tenant_id: number
-  amount: number
-  date: string
-  type: string
-  status: string
-  period: string
-}
+import { jsonServer } from "@/lib/json-server"
 
 // Récupérer tous les paiements
 export async function GET(request: Request) {
@@ -21,35 +9,49 @@ export async function GET(request: Request) {
     const status = searchParams.get("status")
     const tenant_id = searchParams.get("tenant_id")
 
-    let query = `
-      SELECT p.*, t.name as tenant_name, u.name as unit_name, pr.name as property_name
-      FROM payments p
-      LEFT JOIN tenants t ON p.tenant_id = t.id
-      LEFT JOIN units u ON t.unit_id = u.id
-      LEFT JOIN properties pr ON u.property_id = pr.id
-      WHERE 1=1
-    `
-
-    const params: any[] = []
+    let params: any = {}
 
     if (period) {
-      query += " AND p.period = ?"
-      params.push(period)
+      params.period = period
     }
 
     if (status) {
-      query += " AND p.status = ?"
-      params.push(status)
+      params.status = status
     }
 
     if (tenant_id) {
-      query += " AND p.tenant_id = ?"
-      params.push(tenant_id)
+      params.tenant_id = tenant_id
     }
 
-    query += " ORDER BY p.date DESC, p.id DESC"
+    const payments = await jsonServer.get('payments', params)
 
-    const [payments] = await pool.query<Payment[]>(query, params)
+    // Pour chaque paiement, récupérer les informations du locataire, de l'unité et de la propriété
+    for (const payment of payments) {
+      try {
+        const tenant = await jsonServer.get(`tenants/${payment.tenant_id}`)
+        if (tenant) {
+          payment.tenant_name = tenant.name
+
+          const unit = await jsonServer.get(`units/${tenant.unit_id}`)
+          if (unit) {
+            payment.unit_name = unit.name
+
+            const property = await jsonServer.get(`properties/${unit.property_id}`)
+            if (property) {
+              payment.property_name = property.name
+            }
+          }
+        }
+      } catch (error) {
+        console.error(`Erreur lors de la récupération des relations pour le paiement ${payment.id}:`, error)
+        payment.tenant_name = 'Locataire inconnu'
+        payment.unit_name = 'Unité inconnue'
+        payment.property_name = 'Propriété inconnue'
+      }
+    }
+
+    // Trier par date décroissante
+    payments.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
 
     return NextResponse.json(payments)
   } catch (error: any) {
@@ -68,69 +70,70 @@ export async function POST(request: Request) {
     }
 
     // Vérifier si le locataire existe
-    const [tenants] = await pool.query<RowDataPacket[]>("SELECT * FROM tenants WHERE id = ?", [tenant_id])
-
-    if (!Array.isArray(tenants) || tenants.length === 0) {
+    try {
+      await jsonServer.get(`tenants/${tenant_id}`)
+    } catch (error) {
       return NextResponse.json({ error: "Locataire non trouvé" }, { status: 404 })
     }
 
     // Vérifier si un paiement existe déjà pour cette période et ce locataire
-    const [existingPayments] = await pool.query<Payment[]>(
-      "SELECT * FROM payments WHERE tenant_id = ? AND period = ? AND type = ?",
-      [tenant_id, period, type],
-    )
+    const existingPayments = await jsonServer.get('payments', {
+      tenant_id,
+      period,
+      type,
+    })
 
-    if (Array.isArray(existingPayments) && existingPayments.length > 0) {
+    if (existingPayments.length > 0) {
       // Mettre à jour le paiement existant
-      await pool.query('UPDATE payments SET amount = ?, date = ?, status = "paid" WHERE id = ?', [
-        amount,
+      const updatedPayment = await jsonServer.put(`payments/${existingPayments[0].id}`, {
+        amount: Number(amount),
         date,
-        existingPayments[0].id,
-      ])
+        status: "paid",
+        updated_at: new Date().toISOString(),
+      })
 
       // Mettre à jour le statut du locataire
-      await pool.query('UPDATE tenants SET payment_status = "up-to-date" WHERE id = ?', [tenant_id])
+      await jsonServer.patch(`tenants/${tenant_id}`, { payment_status: "up-to-date" })
 
-      // Récupérer le paiement mis à jour
-      const [updatedPayments] = await pool.query<Payment[]>(
-        `
-        SELECT p.*, t.name as tenant_name, u.name as unit_name, pr.name as property_name
-        FROM payments p
-        LEFT JOIN tenants t ON p.tenant_id = t.id
-        LEFT JOIN units u ON t.unit_id = u.id
-        LEFT JOIN properties pr ON u.property_id = pr.id
-        WHERE p.id = ?
-      `,
-        [existingPayments[0].id],
-      )
+      // Récupérer les informations complètes
+      const tenant = await jsonServer.get(`tenants/${tenant_id}`)
+      const unit = await jsonServer.get(`units/${tenant.unit_id}`)
+      const property = await jsonServer.get(`properties/${unit.property_id}`)
 
-      return NextResponse.json(updatedPayments[0])
+      return NextResponse.json({
+        ...updatedPayment,
+        tenant_name: tenant.name,
+        unit_name: unit.name,
+        property_name: property.name,
+      })
     } else {
-      // Insérer un nouveau paiement
-      const [result] = await pool.query<OkPacket>(
-        "INSERT INTO payments (tenant_id, amount, date, type, status, period) VALUES (?, ?, ?, ?, ?, ?)",
-        [tenant_id, amount, date, type, "paid", period],
-      )
+      // Créer un nouveau paiement
+      const newPayment = {
+        tenant_id: Number(tenant_id),
+        amount: Number(amount),
+        date,
+        type,
+        status: "paid",
+        period,
+        created_at: new Date().toISOString(),
+      }
+
+      const result = await jsonServer.post('payments', newPayment)
 
       // Mettre à jour le statut du locataire
-      await pool.query('UPDATE tenants SET payment_status = "up-to-date" WHERE id = ?', [tenant_id])
+      await jsonServer.patch(`tenants/${tenant_id}`, { payment_status: "up-to-date" })
 
-      const insertId = result.insertId
+      // Récupérer les informations complètes
+      const tenant = await jsonServer.get(`tenants/${tenant_id}`)
+      const unit = await jsonServer.get(`units/${tenant.unit_id}`)
+      const property = await jsonServer.get(`properties/${unit.property_id}`)
 
-      // Récupérer le paiement avec les informations complètes
-      const [newPayments] = await pool.query<Payment[]>(
-        `
-        SELECT p.*, t.name as tenant_name, u.name as unit_name, pr.name as property_name
-        FROM payments p
-        LEFT JOIN tenants t ON p.tenant_id = t.id
-        LEFT JOIN units u ON t.unit_id = u.id
-        LEFT JOIN properties pr ON u.property_id = pr.id
-        WHERE p.id = ?
-      `,
-        [insertId],
-      )
-
-      return NextResponse.json(newPayments[0], { status: 201 })
+      return NextResponse.json({
+        ...result,
+        tenant_name: tenant.name,
+        unit_name: unit.name,
+        property_name: property.name,
+      }, { status: 201 })
     }
   } catch (error: any) {
     console.error("Erreur lors de la création du paiement:", error)
@@ -148,28 +151,39 @@ export async function PUT(request: Request) {
     }
 
     // Récupérer tous les locataires actifs
-    const [tenants] = await pool.query<RowDataPacket[]>(`
-      SELECT t.*, u.rent as rent_amount
-      FROM tenants t
-      JOIN units u ON t.unit_id = u.id
-      WHERE u.status = 'occupied'
-    `)
+    const tenants = await jsonServer.get('tenants')
+    const activeTenants = []
 
-    if (!Array.isArray(tenants) || tenants.length === 0) {
+    for (const tenant of tenants) {
+      try {
+        const unit = await jsonServer.get(`units/${tenant.unit_id}`)
+        if (unit && unit.status === 'occupied') {
+          activeTenants.push({
+            ...tenant,
+            rent_amount: unit.rent,
+          })
+        }
+      } catch (error) {
+        console.error(`Erreur lors de la vérification de l'unité pour le locataire ${tenant.id}:`, error)
+      }
+    }
+
+    if (activeTenants.length === 0) {
       return NextResponse.json({ message: "Aucun locataire actif trouvé" }, { status: 200 })
     }
 
     const results = []
 
     // Pour chaque locataire, créer un paiement en attente
-    for (const tenant of tenants) {
+    for (const tenant of activeTenants) {
       // Vérifier si un paiement existe déjà pour cette période et ce locataire
-      const [existingPayments] = await pool.query<Payment[]>(
-        'SELECT * FROM payments WHERE tenant_id = ? AND period = ? AND type = "rent"',
-        [tenant.id, period],
-      )
+      const existingPayments = await jsonServer.get('payments', {
+        tenant_id: tenant.id,
+        period,
+        type: "rent",
+      })
 
-      if (Array.isArray(existingPayments) && existingPayments.length > 0) {
+      if (existingPayments.length > 0) {
         // Le paiement existe déjà, ne rien faire
         results.push({
           tenant_id: tenant.id,
@@ -179,19 +193,26 @@ export async function PUT(request: Request) {
         })
       } else {
         // Créer un nouveau paiement en attente
-        const [result] = await pool.query<OkPacket>(
-          "INSERT INTO payments (tenant_id, amount, date, type, status, period) VALUES (?, ?, NULL, ?, ?, ?)",
-          [tenant.id, tenant.rent_amount, "rent", "unpaid", period],
-        )
+        const newPayment = {
+          tenant_id: tenant.id,
+          amount: tenant.rent_amount,
+          date: null,
+          type: "rent",
+          status: "unpaid",
+          period,
+          created_at: new Date().toISOString(),
+        }
+
+        const result = await jsonServer.post('payments', newPayment)
 
         // Mettre à jour le statut du locataire
-        await pool.query('UPDATE tenants SET payment_status = "late" WHERE id = ?', [tenant.id])
+        await jsonServer.patch(`tenants/${tenant.id}`, { payment_status: "late" })
 
         results.push({
           tenant_id: tenant.id,
           tenant_name: tenant.name,
           status: "created",
-          payment_id: result.insertId,
+          payment_id: result.id,
         })
       }
     }
@@ -205,4 +226,3 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: "Erreur serveur" }, { status: 500 })
   }
 }
-

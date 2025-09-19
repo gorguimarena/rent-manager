@@ -1,21 +1,18 @@
 import { NextResponse } from "next/server"
-import pool from "@/lib/db"
-import type { RowDataPacket, OkPacket } from "mysql2"
-
-// Interface pour représenter un utilisateur
-interface User extends RowDataPacket {
-  id: number
-  username: string
-  email: string
-  role: string
-}
+import { jsonServer } from "@/lib/json-server"
 
 // Récupérer tous les utilisateurs
 export async function GET() {
   try {
-    const [users] = await pool.query<User[]>("SELECT id, username, email, role, created_at FROM users ORDER BY id")
+    const users = await jsonServer.get('users')
 
-    return NextResponse.json(users)
+    // Retourner les utilisateurs sans les mots de passe
+    const usersWithoutPasswords = users.map((user: any) => {
+      const { password, ...userWithoutPassword } = user
+      return userWithoutPassword
+    })
+
+    return NextResponse.json(usersWithoutPasswords)
   } catch (error: any) {
     console.error("Erreur lors de la récupération des utilisateurs:", error)
     return NextResponse.json({ error: "Erreur serveur" }, { status: 500 })
@@ -32,32 +29,29 @@ export async function POST(request: Request) {
     }
 
     // Vérifier si l'utilisateur existe déjà
-    const [existingUsers] = await pool.query<User[]>("SELECT * FROM users WHERE username = ?", [username])
+    const existingUsers = await jsonServer.get('users', { username })
 
-    if (Array.isArray(existingUsers) && existingUsers.length > 0) {
+    if (existingUsers.length > 0) {
       return NextResponse.json({ error: "Ce nom d'utilisateur existe déjà" }, { status: 400 })
     }
 
-    // Insérer l'utilisateur
-    const [result] = await pool.query<OkPacket>(
-      "INSERT INTO users (username, password, email, role) VALUES (?, ?, ?, ?)",
-      [username, password, email, role],
-    )
+    // Créer l'utilisateur
+    const newUser = {
+      username,
+      password,
+      email,
+      role,
+      created_at: new Date().toISOString(),
+    }
 
-    const insertId = result.insertId
+    const result = await jsonServer.post('users', newUser)
 
-    return NextResponse.json(
-      {
-        id: insertId,
-        username,
-        email,
-        role,
-      },
-      { status: 201 },
-    )
+    // Retourner l'utilisateur sans le mot de passe
+    const { password: _, ...userWithoutPassword } = result
+
+    return NextResponse.json(userWithoutPassword, { status: 201 })
   } catch (error: any) {
     console.error("Erreur lors de la création de l'utilisateur:", error)
     return NextResponse.json({ error: "Erreur serveur" }, { status: 500 })
   }
 }
-

@@ -1,0 +1,270 @@
+{
+  "users": [
+    {
+      "id": 1,
+      "username": "admin",
+      "password": "admin123",
+      "email": "admin@example.com",
+      "role": "admin",
+      "created_at": "2025-03-17T15:36:47.000Z"
+    },
+    {
+      "id": 2,
+      "username": "mouhamed",
+      "password": "buanderie",
+      "email": "mouhamedbuanderie@gmail.com",
+      "role": "user",
+      "created_at": "2025-03-17T17:48:41.000Z"
+    },
+    {
+      "id": 3,
+      "username": "serigne",
+      "password": "cheikhbi",
+      "email": "serignemoufti@gmail.com",
+      "role": "admin",
+      "created_at": "2025-03-19T01:14:08.000Z"
+    }
+  ],
+  "properties": [
+    {
+      "id": 2,
+      "name": "Maison Zone de Captage",
+      "address": "Grand Yoff",
+      "created_at": "2025-03-17T17:50:47.000Z"
+    },
+    {
+      "id": 3,
+      "name": "Maison sis aux HLM",
+      "address": "HLM",
+      "created_at": "2025-03-17T17:53:16.000Z"
+    }
+  ],
+  "units": [
+    {
+      "id": 4,
+      "property_id": 2,
+      "name": "Appartement rez de chaussée 1",
+      "type": "apartment",
+      "size": 10,
+      "rent": 150000,
+      "status": "occupied",
+      "created_at": "2025-03-17T17:52:01.000Z"
+    },
+    {
+      "id": 5,
+      "property_id": 2,
+      "name": "Appartement rez de chaussée 1",
+      "type": "apartment",
+      "size": 10,
+      "rent": 150000,
+      "status": "occupied",
+      "created_at": "2025-03-17T17:52:01.000Z"
+    },
+    {
+      "id": 6,
+      "property_id": 2,
+      "name": "Appartement rez de chaussée 2",
+      "type": "apartment",
+      "size": 10,
+      "rent": 175000,
+      "status": "occupied",
+      "created_at": "2025-03-17T17:52:32.000Z"
+    },
+    {
+      "id": 7,
+      "property_id": 2,
+      "name": "studio rez de chaussée 1",
+      "type": "studio",
+      "size": 7,
+      "rent": 100000,
+      "status": "occupied",
+      "created_at": "2025-03-17T17:52:46.000Z"
+    },
+    {
+      "id": 8,
+      "property_id": 2,
+      "name": "studio rez de chaussée 2",
+      "type": "studio",
+      "size": 7,
+      "rent": 100000,
+      "status": "occupied",
+      "created_at": "2025-03-17T17:52:57.000Z"
+    },
+    {
+      "id": 9,
+      "property_id": 3,
+      "name": "Appartement rez de chaussée 1",
+      "type": "apartment",
+      "size": 20,
+      "rent": 200000,
+      "status": "occupied",
+      "created_at": "2025-03-19T00:33:43.000Z"
+    },
+    {
+      "id": 10,
+      "property_id": 3,
+      "name": "Appartement rez de chaussée 1",
+      "type": "apartment",
+      "size": 20,
+      "rent": 200000,
+      "status": "vacant",
+      "created_at": "2025-03-19T00:33:43.000Z"
+    },
+    {
+      "id": 11,
+      "property_id": 3,
+      "name": "studio rez de chaussée 1",
+      "type": "studio",
+      "size": 20,
+      "rent": 300000,
+      "status": "vacant",
+      "created_at": "2025-03-19T00:33:57.000Z"
+    }
+  ],
+  "tenants": [
+    {
+      "id": 2,
+      "name": "serigne saliou",
+      "phone": "7777",
+      "email": null,
+      "unit_id": 5,
+      "deposit_amount": 300000,
+      "lease_start": "2025-03-16T23:00:00.000Z",
+      "lease_end": null,
+      "payment_status": "up-to-date",
+      "created_at": "2025-03-17T18:01:22.000Z"
+    },
+    {
+      "id": 3,
+      "name": "amadou",
+      "phone": "6666",
+      "email": null,
+      "unit_id": 6,
+      "deposit_amount": 200000,
+      "lease_start": "2025-03-15T23:00:00.000Z",
+      "lease_end": null,
+      "payment_status": "up-to-date",
+      "created_at": "2025-03-17T18:01:41.000Z"
+    },
+    {
+      "id": 4,
+      "name": "mouhamed",
+      "phone": "5555",
+      "email": null,
+      "unit_id": 7,
+      "deposit_amount": 300000,
+      "lease_start": "2025-03-16T23:00:00.000Z",
+      "lease_end": null,
+      "payment_status": "up-to-date",
+      "created_at": "2025-03-17T18:02:09.000Z"
+    },
+    {
+      "id": 5,
+      "name": "mbaye",
+      "phone": "1111",
+      "email": null,
+      "unit_id": 8,
+      "deposit_amount": 500000,
+      "lease_start": "2025-03-16T23:00:00.000Z",
+      "lease_end": null,
+      "payment_status": "up-to-date",
+      "created_at": "2025-03-17T18:02:26.000Z"
+    },
+    {
+      "id": 6,
+      "name": "marie",
+      "phone": "222",
+      "email": null,
+      "unit_id": 4,
+      "deposit_amount": 600000,
+      "lease_start": "2025-03-16T23:00:00.000Z",
+      "lease_end": null,
+      "payment_status": "up-to-date",
+      "created_at": "2025-03-17T18:02:41.000Z"
+    },
+    {
+      "id": 7,
+      "name": "massamba",
+      "phone": "8888",
+      "email": null,
+      "unit_id": 9,
+      "deposit_amount": 400000,
+      "lease_start": "2025-03-18T23:00:00.000Z",
+      "lease_end": null,
+      "payment_status": "up-to-date",
+      "created_at": "2025-03-19T00:34:57.000Z"
+    }
+  ],
+  "payments": [
+    {
+      "id": 1,
+      "tenant_id": 2,
+      "amount": 150000,
+      "date": "2025-03-17T23:00:00.000Z",
+      "period": "Mars 2025",
+      "type": "rent",
+      "status": "paid",
+      "created_at": "2025-03-17T18:03:34.000Z"
+    },
+    {
+      "id": 3,
+      "tenant_id": 3,
+      "amount": 175000,
+      "date": "2025-03-17T23:00:00.000Z",
+      "period": "Mars 2025",
+      "type": "rent",
+      "status": "paid",
+      "created_at": "2025-03-19T00:00:18.000Z"
+    },
+    {
+      "id": 5,
+      "tenant_id": 7,
+      "amount": 100000,
+      "date": "2025-03-18T23:00:00.000Z",
+      "period": "Mars 2025",
+      "type": "rent",
+      "status": "paid",
+      "created_at": "2025-03-19T00:44:23.000Z"
+    },
+    {
+      "id": 6,
+      "tenant_id": 6,
+      "amount": 150000,
+      "date": "2025-03-18T23:00:00.000Z",
+      "period": "Mars 2025",
+      "type": "rent",
+      "status": "paid",
+      "created_at": "2025-03-19T01:12:36.000Z"
+    },
+    {
+      "id": 7,
+      "tenant_id": 5,
+      "amount": 100000,
+      "date": "2025-03-18T23:00:00.000Z",
+      "period": "Mars 2025",
+      "type": "rent",
+      "status": "paid",
+      "created_at": "2025-03-19T01:20:50.000Z"
+    }
+  ],
+  "expenses": [
+    {
+      "id": 1,
+      "property_id": 3,
+      "amount": 100000,
+      "date": "2025-03-18T23:00:00.000Z",
+      "category": "electricity",
+      "description": "Senelec",
+      "created_at": "2025-03-19T00:43:25.000Z"
+    },
+    {
+      "id": 2,
+      "property_id": 2,
+      "amount": 50000,
+      "date": "2025-03-18T23:00:00.000Z",
+      "category": "water",
+      "description": "SenEau",
+      "created_at": "2025-03-19T00:48:57.000Z"
+    }
+  ]
+}
